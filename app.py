@@ -373,5 +373,5 @@ if __name__ == "__main__":
     print("📊  Leads   : GET  http://localhost:5000/leads")
     print("📈  Stats   : GET  http://localhost:5000/stats")
     print("────────────────────────────────\n")
-     port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
