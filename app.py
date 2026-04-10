@@ -4,7 +4,7 @@ Flask + Twilio WhatsApp API
 Run: pip install flask flask-cors twilio && python app.py
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
 import json, os, uuid
 from datetime import datetime
@@ -38,6 +38,107 @@ def load_leads():
 def save_leads(leads):
     with open(LEADS_FILE, "w") as f:
         json.dump(leads, f, indent=2)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Root route  –  Beautiful status page
+# ─────────────────────────────────────────────────────────────────────────────
+
+STATUS_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>WA Bot — Server Status</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'DM Sans',sans-serif;background:#0d0d0d;color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center}
+  .card{background:#141414;border:1px solid #222;border-radius:24px;padding:48px 52px;max-width:520px;width:90%;text-align:center;box-shadow:0 32px 80px rgba(0,0,0,.5)}
+  .icon{font-size:52px;margin-bottom:20px;animation:float 3s ease-in-out infinite}
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+  h1{font-family:'Syne',sans-serif;font-size:32px;font-weight:800;letter-spacing:-.5px;margin-bottom:6px}
+  h1 span{background:linear-gradient(135deg,#ff4d8d,#ff8c42);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+  .subtitle{color:#666;font-size:15px;margin-bottom:36px}
+  .status-row{display:flex;align-items:center;justify-content:space-between;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:14px 18px;margin-bottom:10px;text-align:left}
+  .status-label{font-size:13px;color:#888}
+  .status-val{font-size:13px;font-weight:500}
+  .badge{display:inline-flex;align-items:center;gap:6px;background:rgba(52,211,153,.12);color:#34d399;padding:4px 10px;border-radius:99px;font-size:12px;font-weight:600}
+  .dot{width:7px;height:7px;border-radius:50%;background:#34d399;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(52,211,153,.4)}50%{box-shadow:0 0 0 5px rgba(52,211,153,0)}}
+  .endpoints{margin-top:28px;text-align:left}
+  .ep-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#555;margin-bottom:12px;font-weight:600}
+  .ep{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#1a1a1a;border-radius:8px;margin-bottom:6px}
+  .method{font-size:10px;font-weight:700;padding:3px 7px;border-radius:5px;letter-spacing:.04em}
+  .get{background:rgba(56,189,248,.15);color:#38bdf8}
+  .post{background:rgba(250,204,21,.15);color:#facc15}
+  .ep-path{font-family:monospace;font-size:13px;color:#ccc}
+  .ep-desc{margin-left:auto;font-size:11px;color:#555}
+  .footer{margin-top:28px;font-size:12px;color:#444}
+  .footer a{color:#ff4d8d;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="icon">🤖</div>
+  <h1>WA<span>Auto</span> Bot</h1>
+  <p class="subtitle">WhatsApp Automation Backend</p>
+
+  <div class="status-row">
+    <span class="status-label">Server Status</span>
+    <span class="badge"><span class="dot"></span> Online & Running</span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">Total Leads</span>
+    <span class="status-val">{{ total_leads }}</span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">Twilio</span>
+    <span class="status-val" style="color:{{ twilio_color }}">{{ twilio_status }}</span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">Server Time</span>
+    <span class="status-val">{{ server_time }}</span>
+  </div>
+
+  <div class="endpoints">
+    <div class="ep-title">Available Endpoints</div>
+    <div class="ep"><span class="method post">POST</span><span class="ep-path">/webhook</span><span class="ep-desc">Twilio incoming</span></div>
+    <div class="ep"><span class="method get">GET</span><span class="ep-path">/leads</span><span class="ep-desc">All leads</span></div>
+    <div class="ep"><span class="method post">POST</span><span class="ep-path">/leads</span><span class="ep-desc">Add lead</span></div>
+    <div class="ep"><span class="method get">GET</span><span class="ep-path">/stats</span><span class="ep-desc">Dashboard stats</span></div>
+    <div class="ep"><span class="method get">GET</span><span class="ep-path">/health</span><span class="ep-desc">Health check</span></div>
+  </div>
+
+  <div class="footer">Built with Flask + Twilio &nbsp;·&nbsp; <a href="/health">/health</a> &nbsp;·&nbsp; <a href="/stats">/stats</a></div>
+</div>
+</body>
+</html>
+"""
+
+@app.route("/", methods=["GET"])
+def index():
+    leads  = load_leads()
+    return render_template_string(
+        STATUS_HTML,
+        total_leads   = len(leads),
+        twilio_status = "✅ Available" if TWILIO_AVAILABLE else "⚠️ Not installed",
+        twilio_color  = "#34d399" if TWILIO_AVAILABLE else "#facc15",
+        server_time   = datetime.now().strftime("%d %b %Y, %H:%M:%S UTC"),
+    )
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    leads = load_leads()
+    return jsonify({
+        "status":        "ok",
+        "server":        "WA Auto Bot",
+        "total_leads":   len(leads),
+        "twilio":        TWILIO_AVAILABLE,
+        "timestamp":     datetime.now().isoformat(),
+    })
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Session store: tracks conversation state per phone number
@@ -254,63 +355,22 @@ def get_stats():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Demo data seed (runs once if leads.json doesn't exist)
+# Ensure leads.json exists on startup (empty, no demo data)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def seed_demo():
-    if os.path.exists(LEADS_FILE):
-        return
-    demo = [
-        {
-            "id": str(uuid.uuid4()), "name": "Priya Sharma",
-            "phone": "+919876543210", "last_message": "What are the fees?",
-            "status": "contacted", "created_at": "2025-04-08T10:30:00",
-            "updated_at": "2025-04-08T10:35:00",
-            "messages": [
-                {"text": "hi",                    "time": "2025-04-08T10:30:00", "direction": "inbound"},
-                {"text": "Welcome! Tell me your name.", "time": "2025-04-08T10:30:05", "direction": "outbound"},
-                {"text": "Priya Sharma",           "time": "2025-04-08T10:31:00", "direction": "inbound"},
-                {"text": "Nice to meet you, Priya! 👋", "time": "2025-04-08T10:31:05", "direction": "outbound"},
-                {"text": "What are the fees?",     "time": "2025-04-08T10:32:00", "direction": "inbound"},
-                {"text": "💰 Fee Structure: Foundation ₹15k, Standard ₹25k, Premium ₹40k/year", "time": "2025-04-08T10:32:05", "direction": "outbound"},
-            ]
-        },
-        {
-            "id": str(uuid.uuid4()), "name": "Rahul Verma",
-            "phone": "+919123456789", "last_message": "hostel",
-            "status": "new", "created_at": "2025-04-09T14:20:00",
-            "updated_at": "2025-04-09T14:25:00",
-            "messages": [
-                {"text": "hostel", "time": "2025-04-09T14:20:00", "direction": "inbound"},
-                {"text": "🏠 Boys Hostel ₹8k/mo · Girls ₹8.5k/mo · WiFi, AC, Mess, Gym", "time": "2025-04-09T14:20:05", "direction": "outbound"},
-            ]
-        },
-        {
-            "id": str(uuid.uuid4()), "name": "Anjali Singh",
-            "phone": "+918765432109", "last_message": "What is the admission process?",
-            "status": "closed", "created_at": "2025-04-07T09:15:00",
-            "updated_at": "2025-04-07T09:20:00",
-            "messages": [
-                {"text": "What is the admission process?", "time": "2025-04-07T09:15:00", "direction": "inbound"},
-                {"text": "🙏 Our team will contact you shortly. ✅", "time": "2025-04-07T09:15:05", "direction": "outbound"},
-            ]
-        },
-        {
-            "id": str(uuid.uuid4()), "name": "Arjun Patel",
-            "phone": "+917654321098", "last_message": "fees",
-            "status": "new", "created_at": "2025-04-10T08:05:00",
-            "updated_at": "2025-04-10T08:05:00",
-            "messages": [
-                {"text": "fees", "time": "2025-04-10T08:05:00", "direction": "inbound"},
-                {"text": "💰 Standard ₹25k/year includes material & doubt sessions.", "time": "2025-04-10T08:05:05", "direction": "outbound"},
-            ]
-        },
-    ]
-    save_leads(demo)
-    print("✅ Demo leads seeded.")
+def init_storage():
+    """Create an empty leads.json if it doesn't exist yet."""
+    if not os.path.exists(LEADS_FILE):
+        save_leads([])
+        print("✅ leads.json initialised (empty).")
 
 
 if __name__ == "__main__":
-    seed_demo()
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    init_storage()
+    print("\n🚀  WhatsApp Automation Backend")
+    print("────────────────────────────────")
+    print("📡  Webhook : POST http://localhost:5000/webhook")
+    print("📊  Leads   : GET  http://localhost:5000/leads")
+    print("📈  Stats   : GET  http://localhost:5000/stats")
+    print("────────────────────────────────\n")
+    app.run(debug=True, port=5000)
